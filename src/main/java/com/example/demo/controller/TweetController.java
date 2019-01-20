@@ -42,17 +42,17 @@ import reactor.core.publisher.Mono;
 @RestController
 public class TweetController {
 
-	private final Logger logger = LogManager.getLogger(getClass());
-	
+    private final Logger logger = LogManager.getLogger(getClass());
+
     @Autowired
     private TweetRepository tweetRepository;
-    
+
     @Autowired
     private GridFsTemplate gridFsTemplate;
-    
+
     @Autowired
     private GridFSBucket gridFSBucket;
-    
+
     @GetMapping("/tweets")
     public Flux<Tweet> getAllTweets() {
         return tweetRepository.findAll();
@@ -96,37 +96,39 @@ public class TweetController {
     public Flux<Tweet> streamAllTweets() {
         return tweetRepository.findAll();
     }
-    
+
     @PostMapping("/upload/{id}")
     public void upload(@RequestPart("file") FilePart filePart, @PathVariable(value = "id") String id)
-    		throws IOException {
-    	File file = new File("D:\\Temp\\t.png");
-    	filePart.transferTo(file);
-    	try (InputStream is = new FileInputStream(file)) {
-			gridFsTemplate.store(is, id);
-			logger.info("store file success");
-    	}
+        throws IOException {
+        File file = File.createTempFile(id, "png");
+        filePart.transferTo(file);
+        try (InputStream is = new FileInputStream(file)) {
+            gridFsTemplate.store(is, id);
+            logger.info("store file success");
+        } finally {
+            file.delete();
+        }
     }
-    
+
     @GetMapping("/download/{id}")
     public Mono<Void> download(ServerHttpResponse response, @PathVariable(value = "id") String id)
-    		throws IllegalStateException, IOException {
-    	File file = new File("D:\\Temp\\t.png");
-    	ZeroCopyHttpOutputMessage zeroCopyResponse = (ZeroCopyHttpOutputMessage) response;
+        throws IllegalStateException, IOException {
+        File file = new File("D:\\Temp\\t.png");
+        ZeroCopyHttpOutputMessage zeroCopyResponse = (ZeroCopyHttpOutputMessage)response;
         response.getHeaders().set(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=parallel.png");
         response.getHeaders().setContentType(MediaType.IMAGE_PNG);
         GridFSFile gridFSFile = gridFsTemplate.findOne(Query.query(GridFsCriteria.whereFilename().is(id)));
         if (gridFSFile == null) {
-			logger.error("store file {} not exists.", id);
-			return Mono.empty();
+            logger.error("store file {} not exists.", id);
+            return Mono.empty();
         }
         try (InputStream is = gridFSBucket.openDownloadStream(gridFSFile.getObjectId());
-        		OutputStream os = new FileOutputStream(file)) {
-        	byte[] bytes = new byte[1024];
-        	int len;
-        	while ((len = is.read(bytes)) > 0) {
-        		os.write(bytes, 0, len);
-        	}
+            OutputStream os = new FileOutputStream(file)) {
+            byte[] bytes = new byte[1024];
+            int len;
+            while ((len = is.read(bytes)) > 0) {
+                os.write(bytes, 0, len);
+            }
         }
         return zeroCopyResponse.writeWith(file, 0, file.length());
     }
